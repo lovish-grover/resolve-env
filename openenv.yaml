@@ -1,0 +1,18 @@
+version: "1.0"
+env_name: "ResolveEnv"
+description: "A multi-step customer support triage environment where an agent must use internal APIs to investigate issues, check policies, and resolve tickets."
+tags: ["customer-support", "tool-use", "multi-step"]
+
+tasks:
+  - id: "task_easy_t1"
+    name: "Check Order Status"
+    difficulty: "easy"
+    description: "Agent must investigate a delayed order and inform the customer."
+  - id: "task_medium_t2"
+    name: "Standard Refund"
+    difficulty: "medium"
+    description: "Agent must verify an order and issue a refund according to policy."
+  - id: "task_hard_t3"
+    name: "Policy Trap Escalation"
+    difficulty: "hard"
+    description: "Agent must realize an order is outside the 30-day refund window and escalate the ticket instead of issuing a refund."
