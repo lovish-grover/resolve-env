@@ -18,5 +18,4 @@ dependencies = [
 ]
 
 [project.scripts]
-# This exact entry point allows 'openenv validate' to test the server
-resolve-env-server = "server.app:main"
+server = "server.app:main"
