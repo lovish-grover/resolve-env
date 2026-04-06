@@ -4,10 +4,7 @@ from uuid import uuid4
 from openenv.core.env_server.interfaces import Environment
 from openenv.core.env_server.types import State
 
-try:
-    from ..models import ResolveAction, ResolveObservation
-except ImportError:
-    from models import ResolveAction, ResolveObservation
+from models import ResolveAction, ResolveObservation
 
 class ResolveEnvironment(Environment):
     SUPPORTS_CONCURRENT_SESSIONS = True
