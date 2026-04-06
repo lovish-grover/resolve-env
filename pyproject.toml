@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "resolve-env"
+version = "1.0.0"
+description = "A multi-step customer support OpenEnv benchmark"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "openenv-core",
+    "openai>=1.0.0",
+    "python-dotenv",
+    "fastapi",
+    "uvicorn",
+    "pydantic"
+]
