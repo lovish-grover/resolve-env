@@ -13,9 +13,13 @@ app = create_app(
     max_concurrent_envs=10, 
 )
 
+# --- THE FIX: Create an explicit endpoint for the Docker Healthcheck ---
+@app.get("/health")
+def health_check():
+    return {"status": "healthy"}
+
 def main():
-    # Required by the Hackathon grader for multi-mode deployment.
-    # Forces Uvicorn to run on port 7860 (Hugging Face default).
+    # Forces Uvicorn to run on port 7860
     uvicorn.run("server.app:app", host="0.0.0.0", port=7860)
 
 if __name__ == "__main__":
