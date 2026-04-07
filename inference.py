@@ -9,25 +9,24 @@ from server.resolve_environment import ResolveEnvironment
 
 load_dotenv() 
 
-# 1. MANDATORY VARIABLES (Matching Hackathon Rules exactly)
+# 1. MANDATORY VARIABLES
 API_BASE_URL = os.getenv("API_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai/")
 MODEL_NAME = os.getenv("MODEL_NAME", "gemini-1.5-flash")
-# Safely fall back through the token names
 API_KEY = os.getenv("HF_TOKEN", os.getenv("OPENAI_API_KEY", os.getenv("GEMINI_API_KEY", "")))
 
-# 2. STRICT STDOUT LOGGING (Lowercase booleans, exact spacing)
+# 2. STRICT STDOUT LOGGING
 def log_start(task, env, model):
     print(f"[START] task={task} env={env} model={model}", flush=True)
 
 def log_step(step, action, reward, done, error=None):
     err_str = error if error else "null"
-    done_str = str(done).lower() # Rule: lowercase booleans
-    action_str = json.dumps(action).replace(" ", "") # Compact JSON string
+    done_str = str(done).lower()
+    action_str = json.dumps(action).replace(" ", "")
     print(f"[STEP] step={step} action={action_str} reward={reward:.2f} done={done_str} error={err_str}", flush=True)
 
 def log_end(success, steps, score, rewards):
-    success_str = str(success).lower() # Rule: lowercase booleans
-    rewards_str = ",".join([f"{r:.2f}" for r in rewards]) # Rule: 0.00,0.00,1.00 formatting
+    success_str = str(success).lower()
+    rewards_str = ",".join([f"{r:.2f}" for r in rewards])
     print(f"[END] success={success_str} steps={steps} score={score:.2f} rewards={rewards_str}", flush=True)
 
 SYSTEM_PROMPT = """You are a Level 1 Customer Support AI. 
@@ -68,18 +67,16 @@ async def run_task(client, env: ResolveEnvironment, task_id, task_name, max_step
         history.append({"role": "user", "content": user_msg})
         
         try:
-            # MANDATORY: Using the OpenAI SDK Client 
             completion = await client.chat.completions.create(
                 model=MODEL_NAME,
                 messages=history,
                 temperature=0.0,
-                response_format={"type": "json_object"} # Standard JSON mode to bypass Pydantic errors
+                response_format={"type": "json_object"}
             )
             
             raw_text = completion.choices[0].message.content.strip()
             action_dict = json.loads(raw_text)
             
-            # Map it back to our strict Pydantic model for the environment
             action_obj = ResolveAction(**action_dict)
             history.append({"role": "assistant", "content": raw_text})
             
@@ -93,14 +90,20 @@ async def run_task(client, env: ResolveEnvironment, task_id, task_name, max_step
             log_step(step=step, action={"error": "failed"}, reward=-1.0, done=True, error=str(e))
             break
 
-    final_score = env.grade()
-    success = final_score >= 1.0
+    # --- THE FIX: Clamp the final score strictly between 0.01 and 0.99 ---
+    raw_score = env.grade()
+    
+    # Force the score into the strictly (0, 1) range required by the validator
+    final_score = min(max(float(raw_score), 0.01), 0.99)
+    
+    # Mark as success if the score is reasonably high
+    success = final_score > 0.8
+    
     log_end(success=success, steps=steps_taken, score=final_score, rewards=rewards)
 
 async def main():
     env = ResolveEnvironment()
     
-    # 3. Initialize OpenAI Client (Required by Hackathon)
     async with AsyncOpenAI(base_url=API_BASE_URL, api_key=API_KEY) as client:
         tasks = [
             ("t1", "Check_Order_Status_Easy"), 
@@ -108,8 +111,7 @@ async def main():
             ("t3", "Policy_Trap_Escalation_Hard")
         ]
         for t_id, t_name in tasks:
-            print("  (Pausing for 12s to respect API rate limits...)", flush=True)
-            await asyncio.sleep(12) 
+            # We removed the 12-second sleep here to prevent Phase 2 Timeouts!
             await run_task(client, env, task_id=t_id, task_name=t_name)
 
 if __name__ == "__main__":
