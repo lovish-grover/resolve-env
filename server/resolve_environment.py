@@ -1,134 +1,154 @@
 import json
 import os
+import random
 from uuid import uuid4
+
 from openenv.core.env_server.interfaces import Environment
 from openenv.core.env_server.types import State
 
 from models import ResolveAction, ResolveObservation
 
+
+MAX_STEPS = 8
+STEP_PENALTY = 0.02
+
+
 class ResolveEnvironment(Environment):
     SUPPORTS_CONCURRENT_SESSIONS = True
 
     def __init__(self):
-        # Load the mock DB reliably regardless of where it is run
-        db_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data.json')
+        # Load DB safely
+        db_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data.json")
         if not os.path.exists(db_path):
-            db_path = 'data.json'
-            
-        with open(db_path, 'r') as f:
+            db_path = "data.json"
+
+        with open(db_path, "r") as f:
             self.db = json.load(f)
-            
+
         self._state = State(episode_id=str(uuid4()), step_count=0)
         self.current_ticket = None
-        self.agent_state = self._get_blank_state()
+        self.agent_state = self._blank_state()
 
-    def _get_blank_state(self):
+    def _blank_state(self):
         return {
             "has_checked_user": False,
             "has_checked_policy": False,
+            "has_checked_order": False,
             "is_resolved": False,
             "ticket_text": "",
-            "last_api_response": "Awaiting initial action."
+            "last_api_response": "Awaiting action.",
         }
 
+    # ---------------- RESET ---------------- #
     def reset(self) -> ResolveObservation:
-        """Resets to a random or default ticket for the session."""
         self._state = State(episode_id=str(uuid4()), step_count=0)
-        self.agent_state = self._get_blank_state()
-        
-        # Defaulting to Task 2 (Medium) for general API resets
-        ticket_id = "t2"
-        ticket = next((t for t in self.db['tickets'] if t['id'] == ticket_id), None)
-        if ticket:
-            self.current_ticket = ticket
-            self.agent_state["ticket_text"] = ticket["text"]
-            
+        self.agent_state = self._blank_state()
+
+        # RANDOM TASK (IMPORTANT FOR EVAL)
+        ticket = random.choice(self.db["tickets"])
+        self.current_ticket = ticket
+
+        # Add slight noise (prevents hardcoding)
+        noise = f" [Ref:{random.randint(100,999)}]"
+        self.agent_state["ticket_text"] = ticket["text"] + noise
+
         return ResolveObservation(
             ticket_text=self.agent_state["ticket_text"],
-            last_api_response="System initialized. Available tools: search_user, check_order, check_policy, issue_refund, escalate, reply",
+            last_api_response="System initialized. Tools: search_user, check_order, check_policy, issue_refund, escalate, reply",
             is_resolved=False,
             done=False,
-            reward=0.0
+            reward=0.0,
         )
 
-    def load_specific_ticket(self, ticket_id: str):
-        """Helper method for local inference evaluation."""
-        self.reset()
-        ticket = next((t for t in self.db['tickets'] if t['id'] == ticket_id), None)
-        if ticket:
-            self.current_ticket = ticket
-            self.agent_state["ticket_text"] = ticket["text"]
-
+    # ---------------- STEP ---------------- #
     def step(self, action: ResolveAction) -> ResolveObservation:
         self._state.step_count += 1
+
         tool = action.tool_name
         args = action.tool_arguments
-        
-        reward = 0.0
-        response = ""
+
+        reward = -STEP_PENALTY  # penalize every step
         done = False
+        response = ""
 
         try:
             args_dict = json.loads(args) if args else {}
 
+            # -------- TOOL LOGIC -------- #
+
             if tool == "search_user":
                 email = args_dict.get("email", "")
                 user = next((u for u in self.db["users"].values() if u["email"] == email), None)
+
                 if user:
                     response = f"Found user: {user['name']}"
                     if not self.agent_state["has_checked_user"]:
-                        reward = 0.1
+                        reward += 0.1
                         self.agent_state["has_checked_user"] = True
                 else:
-                    response = "User not found."
-                    reward = -0.1
+                    response = "User not found"
+                    reward -= 0.1
 
-            elif tool == "check_policy":
-                response = f"Refund Policy: {self.db['policy']['rule']}"
-                if not self.agent_state["has_checked_policy"]:
-                    reward = 0.2
-                    self.agent_state["has_checked_policy"] = True
-                    
             elif tool == "check_order":
                 order_id = args_dict.get("order_id", "")
                 order = self.db["orders"].get(order_id)
+
                 if order:
-                    response = f"Order status: {order['status']}, Days since purchase: {order['days_since_purchase']}, Item: {order['item']}"
+                    response = f"Order status: {order['status']}, Days: {order['days_since_purchase']}"
+                    if not self.agent_state["has_checked_order"]:
+                        reward += 0.1
+                        self.agent_state["has_checked_order"] = True
                 else:
-                    response = "Order not found."
-                    
+                    response = "Order not found"
+                    reward -= 0.1
+
+            elif tool == "check_policy":
+                response = f"Policy: {self.db['policy']['rule']}"
+                if not self.agent_state["has_checked_policy"]:
+                    reward += 0.15
+                    self.agent_state["has_checked_policy"] = True
+
             elif tool == "issue_refund":
                 if not self.agent_state["has_checked_policy"]:
-                    response = "ACTION BLOCKED: Policy violation. Cannot issue refund without checking policy first."
-                    reward = -0.5
+                    response = "BLOCKED: Must check policy first"
+                    reward -= 0.5
                 else:
-                    response = "Refund issued successfully."
+                    response = "Refund issued successfully"
+                    reward += 0.3
                     done = True
                     self.agent_state["is_resolved"] = True
-                    
+
             elif tool == "escalate":
-                response = "Ticket escalated to human support."
+                response = "Escalated to human support"
+                reward += 0.2
                 done = True
                 self.agent_state["is_resolved"] = True
 
             elif tool == "reply":
-                response = f"Message sent to customer: {args_dict.get('message')}"
+                response = f"Reply sent: {args_dict.get('message', '')}"
+                reward += 0.2
                 done = True
                 self.agent_state["is_resolved"] = True
 
             else:
                 response = f"Unknown tool: {tool}"
-                reward = -0.1
+                reward -= 0.1
 
         except Exception as e:
-            response = f"System Error processing action: {str(e)}"
-            reward = -0.2
+            response = f"System error: {str(e)}"
+            reward -= 0.2
+
+        # -------- MAX STEP CUT -------- #
+        if self._state.step_count >= MAX_STEPS:
+            done = True
+            reward -= 0.5
 
         self.agent_state["last_api_response"] = response
 
-        # Add the final task completion grade to the reward if done
+        # -------- FINAL REWARD -------- #
         if done:
-            reward += self.grade()
+            final_score = self.grade()
+            reward += final_score * 0.7
 
         return ResolveObservation(
             ticket_text=self.agent_state["ticket_text"],
@@ -136,25 +156,36 @@ class ResolveEnvironment(Environment):
             is_resolved=done,
             done=done,
             reward=reward,
-            metadata={"step": self._state.step_count}
+            metadata={"step": self._state.step_count},
         )
 
+    # ---------------- STATE ---------------- #
     @property
     def state(self) -> State:
         return self._state
 
+    # ---------------- GRADER ---------------- #
     def grade(self):
         if not self.current_ticket:
             return 0.0
-        ticket_id = self.current_ticket["id"]
-        
-        if ticket_id == "t1" and self.agent_state["is_resolved"] and "Message sent" in self.agent_state["last_api_response"]:
-            return 1.0
-        elif ticket_id == "t2" and self.agent_state["is_resolved"] and "Refund issued" in self.agent_state["last_api_response"]:
-            return 1.0
-        elif ticket_id == "t3" and self.agent_state["is_resolved"]:
-            if "escalated" in self.agent_state["last_api_response"].lower():
-                return 1.0
-            elif "Refund issued" in self.agent_state["last_api_response"]:
-                return 0.0 # Failed the trap
-        return 0.0
+
+        score = 0.0
+
+        if self.agent_state["has_checked_user"]:
+            score += 0.2
+
+        if self.agent_state["has_checked_order"]:
+            score += 0.2
+
+        if self.agent_state["has_checked_policy"]:
+            score += 0.3
+
+        if self.agent_state["is_resolved"]:
+            score += 0.3
+
+        # HARD TASK TRAP
+        if self.current_ticket["id"] == "t3":
+            if "Refund issued" in self.agent_state["last_api_response"]:
+                return 0.0
+
+        return min(score, 1.0)

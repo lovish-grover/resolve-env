@@ -81,8 +81,13 @@ async def run_task(client, env: ResolveEnvironment, task_id, task_name, max_step
             action_obj = ResolveAction(**action_dict)
             history.append({"role": "assistant", "content": raw_text})
             
-            obs = env.step(action_obj)
-            rewards.append(obs.reward)
+            result = env.step(action_obj)
+
+            reward = result.reward
+            done = result.done
+
+            rewards.append(reward)
+            obs = result
             
             log_step(step=step, action=action_dict, reward=obs.reward, done=obs.done)
             if obs.done: break
