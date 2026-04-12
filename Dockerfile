@@ -13,7 +13,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . /app/
 
 # OpenEnv strict networking requirements
-EXPOSE 8000
+EXPOSE 7860
 ENV PYTHONPATH="/app"
 
 # Native Python healthcheck (bypasses the need for curl)
