@@ -1,18 +1,28 @@
 FROM public.ecr.aws/docker/library/python:3.10-slim
 
+# Set environment variables to optimize Python for Docker
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+# Set the working directory
 WORKDIR /app
 
-# Install curl for the healthcheck
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+# Install system dependencies (only if needed for your specific ML/OCR packages)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements and install them
+# Upgrade pip and install dependencies
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
 
-# Copy all your environment files
-COPY . /app/
+# Copy the rest of your application code
+COPY . .
 
-# OpenEnv strict networking requirements
+# Expose the port your app runs on (e.g., 8080 for Hugging Face or 3000)
 EXPOSE 7860
 ENV PYTHONPATH="/app"
 
