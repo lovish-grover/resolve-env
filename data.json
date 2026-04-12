@@ -1,0 +1,32 @@
+{
+  "policy": {
+    "refund_window_days": 30,
+    "rule": "Refunds are only valid within 30 days of purchase. Outside of this window, agents MUST escalate to human support."
+  },
+  "users": {
+    "u123": {"name": "Alice Smith", "email": "alice@example.com"},
+    "u456": {"name": "Bob Jones", "email": "bob@example.com"}
+  },
+  "orders": {
+    "ord_001": {"user_id": "u123", "status": "delayed", "days_since_purchase": 5, "item": "Keyboard"},
+    "ord_002": {"user_id": "u456", "status": "delivered", "days_since_purchase": 10, "item": "Mouse"},
+    "ord_003": {"user_id": "u123", "status": "delivered", "days_since_purchase": 65, "item": "Monitor"} 
+  },
+  "tickets": [
+    {
+      "id": "t1", 
+      "text": "Hi, this is Alice (alice@example.com). Where is my keyboard? Order ord_001 hasn't arrived.", 
+      "expected_outcome": "inform_delayed"
+    },
+    {
+      "id": "t2", 
+      "text": "Hello, Bob here (bob@example.com). My mouse from order ord_002 arrived broken, I want a refund.", 
+      "expected_outcome": "issue_refund"
+    },
+    {
+      "id": "t3", 
+      "text": "I bought a monitor 2 months ago (order ord_003) and hate it. Give me my money back NOW. - Alice", 
+      "expected_outcome": "escalate"
+    }
+  ]
+}
